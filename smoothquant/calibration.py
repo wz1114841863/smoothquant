@@ -11,20 +11,23 @@ from tqdm import tqdm
 
 
 def get_act_scales(model, tokenizer, dataset_path, num_samples=512, seq_len=512):
+    """计算模型的激活缩放因子"""
     model.eval()
     device = next(model.parameters()).device
     act_scales = {}
 
     def stat_tensor(name, tensor):
-        hidden_dim = tensor.shape[-1]
-        tensor = tensor.view(-1, hidden_dim).abs().detach()
-        comming_max = torch.max(tensor, dim=0)[0].float().cpu()
+        """统计张量的最大值"""
+        hidden_dim = tensor.shape[-1]  # 获取隐藏层维度
+        tensor = tensor.view(-1, hidden_dim).abs().detach()  # 展平张量, 取绝对值并分离计算图
+        comming_max = torch.max(tensor, dim=0)[0].float().cpu()  # 计算每列(沿隐藏维度)的最大值
         if name in act_scales:
-            act_scales[name] = torch.max(act_scales[name], comming_max)
+            act_scales[name] = torch.max(act_scales[name], comming_max)  # 更新最大值
         else:
             act_scales[name] = comming_max
 
     def stat_input_hook(m, x, y, name):
+        """作为钩子函数, 在模型前向传播时收集输入数据"""
         if isinstance(x, tuple):
             x = x[0]
         stat_tensor(name, x)
@@ -43,7 +46,7 @@ def get_act_scales(model, tokenizer, dataset_path, num_samples=512, seq_len=512)
         input_ids = tokenizer(
             dataset[i]["text"], return_tensors="pt", max_length=seq_len, truncation=True
         ).input_ids.to(device)
-        model(input_ids)
+        model(input_ids)  # 执行模型推理(触发钩子函数收集激活统计信息)
 
     for h in hooks:
         h.remove()
@@ -65,6 +68,7 @@ def get_static_decoder_layer_scales(
     act_dict = defaultdict(dict)
 
     def stat_io_hook(m, x, y, name):
+        """对输入(x)和输出(y)的绝对值的全局最大值进行动态更新, 保留所有样本中的最大值"""
         if isinstance(x, tuple):
             x = x[0]
         if name not in act_dict or "input" not in act_dict[name]:
@@ -96,6 +100,7 @@ def get_static_decoder_layer_scales(
             dataset[i]["text"], return_tensors="pt", max_length=seq_len, truncation=True
         ).input_ids.to(device)
         model(input_ids)
+        # 实时计算所有层输入的平均尺度, 用于监控数据分布.
         mean_scale = np.mean([v["input"] for v in act_dict.values()])
         pbar.set_description(f"Mean input scale: {mean_scale:.2f}")
     for hook in hooks:
@@ -104,6 +109,7 @@ def get_static_decoder_layer_scales(
     decoder_layer_scales = []
     for idx in range(model.config.num_hidden_layers):
         scale_dict = {}
+        # 所有统计的最大值除以127(INT8对称量化范围[-127, 127]),直接得到量化Scale参数
         scale_dict["attn_input_scale"] = (
             act_dict[f"model.decoder.layers.{idx}.self_attn.q_proj"]["input"] / 127
         )

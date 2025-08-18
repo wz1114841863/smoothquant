@@ -28,7 +28,8 @@ def smooth_ln_fcs(ln, fcs, act_scales, alpha=0.5):
     act_scales = act_scales.to(device=device, dtype=dtype)
     weight_scales = torch.cat(
         [fc.weight.abs().max(dim=0, keepdim=True)[0] for fc in fcs], dim=0
-    )
+    )  # 对每个线性层的权重取绝对值后计算每列最大值， 将所有线性层的权重尺度拼接起来
+    # 从 Q、K、V 三个层的对应通道中，选出最大的那个值。
     weight_scales = weight_scales.max(dim=0)[0].clamp(min=1e-5)
 
     scales = (
@@ -36,12 +37,13 @@ def smooth_ln_fcs(ln, fcs, act_scales, alpha=0.5):
         .clamp(min=1e-5)
         .to(device)
         .to(dtype)
-    )
+    )  # 公式4: (act_scales^alpha) / (weight_scales^(1-alpha))
 
     ln.weight.div_(scales)
     ln.bias.div_(scales)
 
     for fc in fcs:
+        # 每个层都要乘，因为都是单独计算的
         fc.weight.mul_(scales.view(1, -1))
 
 
@@ -73,6 +75,11 @@ def smooth_ln_fcs_llama_like(ln, fcs, act_scales, alpha=0.5):
 
 @torch.no_grad()
 def smooth_lm(model, scales, alpha=0.5):
+    """ Smooth 代码实现
+    model: 从HF加载的FP16模型
+    scales: 预先计算的激活中的最大值(从多个输入样本中计算最大值)
+    alpha: 平滑系数, 对应于论文中公式4的alpha参数
+    """
     for name, module in model.named_modules():
         if isinstance(module, OPTDecoderLayer):
             attn_ln = module.self_attn_layer_norm

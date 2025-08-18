@@ -15,13 +15,13 @@ from smoothquant.calibration import get_static_decoder_layer_scales
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-name", type=str, default='facebook/opt-13b')
+    parser.add_argument("--model-name", type=str, default='facebook/opt-1.3b')
     parser.add_argument("--num-samples", type=int, default=512)
     parser.add_argument("--seq-len", type=int, default=512)
     parser.add_argument("--act-scales", type=str,
-                        default='act_scales/opt-13b.pt')
+                        default='act_scales/opt-1.3b.pt')
     parser.add_argument("--output-path", type=str, default='int8_models')
-    parser.add_argument('--dataset-path', type=str, default='dataset/val.jsonl.zst',
+    parser.add_argument('--dataset-path', type=str, default='/mnt/d/Cache/pile_datasets/val.jsonl.zst',
                         help='location of the calibration dataset, we use the validation set of the Pile dataset')
     parser.add_argument('--export-FT', default=False, action="store_true")
     args = parser.parse_args()
@@ -30,6 +30,7 @@ if __name__ == '__main__':
     act_scales = torch.load(args.act_scales)
     smooth_lm(model, act_scales, 0.5)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    # print(f"finished smoothing {args.model_name} model")
 
     if not os.path.exists(args.dataset_path):
         print(f'Cannot find the dataset at {args.dataset_path}')

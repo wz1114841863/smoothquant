@@ -372,7 +372,7 @@ class Int8OPTDecoder(OPTPreTrainedModel):
 
     get_input_embeddings = OPTDecoder.get_input_embeddings
     set_input_embeddings = OPTDecoder.set_input_embeddings
-    _prepare_decoder_attention_mask = OPTDecoder._prepare_decoder_attention_mask
+    # _prepare_decoder_attention_mask = OPTDecoder._prepare_decoder_attention_mask
     old_forward = OPTDecoder.forward
 
     @staticmethod
