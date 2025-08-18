@@ -8,6 +8,13 @@ slurm_log/
 
 *.pt
 
+# vscode
+.vscode/
+tmp/
+
+# compiled Cython files
+torch-int/submodules/cutlass/build/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -18,7 +25,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+build/*
 develop-eggs/
 dist/
 downloads/

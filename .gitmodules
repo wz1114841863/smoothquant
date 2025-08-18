@@ -1,0 +1,3 @@
+[submodule "torch-int"]
+	path = torch-int
+	url = https://github.com/Guangxuan-Xiao/torch-int.git
