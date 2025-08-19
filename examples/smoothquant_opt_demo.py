@@ -46,18 +46,18 @@ tokenizer = GPT2Tokenizer.from_pretrained("facebook/opt-1.3b")
 dataset = load_dataset("lambada", split="validation[:1000]")
 evaluator = Evaluator(dataset, tokenizer, "cuda")
 
-# # FP16 Model Accuracy: 1.3b-acc:0.721
-# model_fp16 = OPTForCausalLM.from_pretrained(
-#     "facebook/opt-1.3b", torch_dtype=torch.float16, device_map="auto"
-# )
-# acc_fp16 = evaluator.evaluate(model_fp16)
-# print(f"Original model (fp16) accuracy: {acc_fp16}")
+# FP16 Model Accuracy: 1.3b-acc:0.721
+model_fp16 = OPTForCausalLM.from_pretrained(
+    "facebook/opt-1.3b", torch_dtype=torch.float16, device_map="auto"
+)
+acc_fp16 = evaluator.evaluate(model_fp16)
+print(f"Original model (fp16) accuracy: {acc_fp16}")
 
-# # Naive W8A8 Quantization: 1.3b-acc:0.689
-# model_w8a8 = quantize_opt(model_fp16)
-# print(model_w8a8)
-# acc_w8a8 = evaluator.evaluate(model_w8a8)
-# print(f"Naive W8A8 quantized model accuracy: {acc_w8a8}")
+# Naive W8A8 Quantization: 1.3b-acc:0.689
+model_w8a8 = quantize_opt(model_fp16)
+print(model_w8a8)
+acc_w8a8 = evaluator.evaluate(model_w8a8)
+print(f"Naive W8A8 quantized model accuracy: {acc_w8a8}")
 
 # smoothquant quantization W8A8 1.3b-acc:0.706
 model = OPTForCausalLM.from_pretrained(

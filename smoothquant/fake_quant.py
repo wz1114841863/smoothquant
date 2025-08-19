@@ -94,6 +94,7 @@ class W8A8Linear(nn.Module):
             self.output_quant = lambda x: x
 
     def to(self, *args, **kwargs):
+        """Override to method to ensure weight and bias are moved correctly."""
         super(W8A8Linear, self).to(*args, **kwargs)
         self.weight = self.weight.to(*args, **kwargs)
         if self.bias is not None:
@@ -102,9 +103,9 @@ class W8A8Linear(nn.Module):
 
     @torch.no_grad()
     def forward(self, x):
-        q_x = self.act_quant(x)
-        y = torch.functional.F.linear(q_x, self.weight, self.bias)
-        q_y = self.output_quant(y)
+        q_x = self.act_quant(x)  # 量化输入激活值
+        y = torch.functional.F.linear(q_x, self.weight, self.bias)  # 线性计算
+        q_y = self.output_quant(y)  # 可选量化输出
         return q_y
 
     @staticmethod
@@ -119,6 +120,7 @@ class W8A8Linear(nn.Module):
             act_quant=act_quant,
             quantize_output=quantize_output,
         )
+        # 量化原始权重
         if weight_quant == "per_channel":
             new_module.weight = quantize_weight_per_channel_absmax(
                 module.weight, n_bits=8
@@ -160,7 +162,7 @@ def quantize_opt(
                 m.q_proj,
                 weight_quant=weight_quant,
                 act_quant=act_quant,
-                quantize_output=quantize_bmm_input,
+                quantize_output=quantize_bmm_input,  # 量化注意力计算的输入
             )
             m.k_proj = W8A8Linear.from_float(
                 m.k_proj,
