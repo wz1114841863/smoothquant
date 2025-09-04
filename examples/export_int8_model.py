@@ -46,7 +46,7 @@ if __name__ == '__main__':
                                                                        args.dataset_path,
                                                                        num_samples=args.num_samples,
                                                                        seq_len=args.seq_len)
-    output_path = Path(args.output_path) / (Path(args.model_name).name + "-smoothquant.pt")
+    output_path = Path(args.output_path) / (Path(args.model_name).name + "-smoothquant")
     if args.export_FT:
         # 只保存 平滑后的 float16 模型 和 scale 文件,
         model.save_pretrained(output_path)
@@ -56,7 +56,7 @@ if __name__ == '__main__':
         torch.save(raw_scales, output_path)
         print(f"Saved scaling factors at {output_path}")
     else:
-        # 已量化成 INT8 的权重 
+        # 已量化成 INT8 的权重
         int8_model = Int8OPTForCausalLM.from_float(model, decoder_layer_scales)
         int8_model.save_pretrained(output_path)
         print(f"Saved int8 model at {output_path}")

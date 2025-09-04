@@ -68,21 +68,21 @@ def print_model_size(model):
 
 if __name__ == '__main__':
     model_name = "facebook/opt-125m"
-    load_int8_path = "int8_models/opt-1.3b-smoothquant"
+    load_int8_path = "int8_models/opt-125m-smoothquant"
     tokenizer = GPT2Tokenizer.from_pretrained(model_name)
     dataset = load_dataset('lambada', split='validation[:1000]')
     evaluator = Evaluator(dataset, tokenizer)
 
-    model_fp16 = OPTForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map='auto')
-    print_model_size(model_fp16)
-    acc_fp16, latency_fp16 = evaluator.evaluate(model_fp16)
-    print(f'FP16 accuracy: {acc_fp16}, per-sample latency: {latency_fp16:.3f}ms')
+    # model_fp16 = OPTForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map='auto')
+    # print_model_size(model_fp16)
+    # acc_fp16, latency_fp16 = evaluator.evaluate(model_fp16)
+    # print(f'FP16 accuracy: {acc_fp16}, per-sample latency: {latency_fp16:.3f}ms')
 
-    del model_fp16
-    gc.collect()
-    torch.cuda.empty_cache()
+    # del model_fp16
+    # gc.collect()
+    # torch.cuda.empty_cache()
 
-    model_smoothquant = Int8OPTForCausalLM.from_pretrained(load_int8_path, device_map='auto')
+    model_smoothquant = Int8OPTForCausalLM.from_pretrained(load_int8_path, device_map='auto',local_files_only=True,)
     print_model_size(model_smoothquant)
     acc_smoothquant, latency_smoothquant = evaluator.evaluate(model_smoothquant)
     print(f'SmoothQuant INT8 accuracy: {acc_smoothquant}, per-sample latency: {latency_smoothquant:.3f}ms')
