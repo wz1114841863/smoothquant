@@ -1,4 +1,5 @@
 import torch
+import gc
 from transformers.models.opt.modeling_opt import (
     OPTAttention,
     OPTDecoderLayer,
@@ -41,31 +42,41 @@ class Evaluator:
         acc = hit / total
         return acc
 
+if __name__ == "__main__":
+    # model_name = "facebook/opt-125m"
+    model_name = "facebook/opt-1.3b"
+    tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+    dataset = load_dataset("lambada", split="validation[:1000]")
+    evaluator = Evaluator(dataset, tokenizer, "cuda")
 
-tokenizer = GPT2Tokenizer.from_pretrained("facebook/opt-1.3b")
-dataset = load_dataset("lambada", split="validation[:1000]")
-evaluator = Evaluator(dataset, tokenizer, "cuda")
+    # FP16 Model Accuracy: 1.3b-acc:0.721
+    model_fp16 = OPTForCausalLM.from_pretrained(
+        model_name, torch_dtype=torch.float16, device_map="auto"
+    )
+    acc_fp16 = evaluator.evaluate(model_fp16)
+    print(f"Original model (fp16) accuracy: {acc_fp16}")
 
-# FP16 Model Accuracy: 1.3b-acc:0.721
-model_fp16 = OPTForCausalLM.from_pretrained(
-    "facebook/opt-1.3b", torch_dtype=torch.float16, device_map="auto"
-)
-acc_fp16 = evaluator.evaluate(model_fp16)
-print(f"Original model (fp16) accuracy: {acc_fp16}")
+    # Naive W8A8 Quantization: 1.3b-acc:0.689
+    model_w8a8 = quantize_opt(model_fp16)
+    print(model_w8a8)
+    acc_w8a8 = evaluator.evaluate(model_w8a8)
+    print(f"Naive W8A8 quantized model accuracy: {acc_w8a8}")
 
-# Naive W8A8 Quantization: 1.3b-acc:0.689
-model_w8a8 = quantize_opt(model_fp16)
-print(model_w8a8)
-acc_w8a8 = evaluator.evaluate(model_w8a8)
-print(f"Naive W8A8 quantized model accuracy: {acc_w8a8}")
 
-# smoothquant quantization W8A8 1.3b-acc:0.706
-model = OPTForCausalLM.from_pretrained(
-    "facebook/opt-1.3b", torch_dtype=torch.float16, device_map="auto"
-)
-act_scales = torch.load("./act_scales/opt-1.3b.pt")
-smooth_lm(model, act_scales, 0.5)
-model_smoothquant_w8a8 = quantize_opt(model)
-print(model_smoothquant_w8a8)
-acc_smoothquant_w8a8 = evaluator.evaluate(model_smoothquant_w8a8)
-print(f"SmoothQuant W8A8 quantized model accuracy: {acc_smoothquant_w8a8}")
+    del model_fp16
+    del acc_fp16
+    del model_w8a8
+    del acc_w8a8
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    # smoothquant quantization W8A8 1.3b-acc:0.706
+    model = OPTForCausalLM.from_pretrained(
+        "facebook/opt-1.3b", torch_dtype=torch.float16, device_map="auto"
+    )
+    act_scales = torch.load("./act_scales/opt-1.3b.pt")
+    smooth_lm(model, act_scales, 0.5)
+    model_smoothquant_w8a8 = quantize_opt(model)
+    # print(model_smoothquant_w8a8)
+    acc_smoothquant_w8a8 = evaluator.evaluate(model_smoothquant_w8a8)
+    print(f"SmoothQuant W8A8 quantized model accuracy: {acc_smoothquant_w8a8}")

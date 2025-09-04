@@ -13,7 +13,8 @@ slurm_log/
 tmp/
 
 # compiled Cython files
-torch-int/submodules/cutlass/build/
+torch-int/submodules/cutlass/build/*
+/torch-int/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

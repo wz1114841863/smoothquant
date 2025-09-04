@@ -5,8 +5,13 @@ from functools import partial
 
 @torch.no_grad()
 def quantize_weight_per_channel_absmax(w, n_bits=8):
-    # w: (out_features, in_features)
-    scales = w.abs().max(dim=-1, keepdim=True)[0]
+    """对称, per-channel 伪量化
+    Args:
+        w: (out_features, in_features)
+    """
+    # w: (out_features, in_features) -> scales: (out_features, 1)
+    # 每个输出通道单独一个 scale → per-channel
+    scales = w.abs().max(dim=-1, keepdim=True)[0]  # 沿in_features方向取绝对值最大
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
     w.div_(scales).round_().mul_(scales)
@@ -15,8 +20,9 @@ def quantize_weight_per_channel_absmax(w, n_bits=8):
 
 @torch.no_grad()
 def quantize_weight_per_tensor_absmax(w, n_bits=8):
-    # w: (out_features, in_features)
-    scales = w.abs().max()
+    """对称, per-tensor 伪量化"""
+    # w: (out_features, in_features) -> scales: (1,)
+    scales = w.abs().max()  # 全局一个标量
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
     w.div_(scales).round_().mul_(scales)
@@ -25,8 +31,11 @@ def quantize_weight_per_tensor_absmax(w, n_bits=8):
 
 @torch.no_grad()
 def quantize_activation_per_token_absmax(t, n_bits=8):
+    """对称, per-token 伪量化"""
+    # t: (B, S, hidden) -> scales: (B, S, 1)
+    # 每个token单独一个 scale → per-token
     t_shape = t.shape
-    t.view(-1, t_shape[-1])
+    # t.view(-1, t_shape[-1])  # 把任意前置维度合并成 [B*S, hidden], 但是没有赋值, 无效语句.
     scales = t.abs().max(dim=-1, keepdim=True)[0]
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
@@ -36,9 +45,11 @@ def quantize_activation_per_token_absmax(t, n_bits=8):
 
 @torch.no_grad()
 def quantize_activation_per_tensor_absmax(t, n_bits=8):
+    """对称, per-tensor 伪量化"""
+    # t: (B, S, hidden) -> scales: (1,)
     t_shape = t.shape
-    t.view(-1, t_shape[-1])
-    scales = t.abs().max()
+    # t.view(-1, t_shape[-1])
+    scales = t.abs().max()  # 全局一个标量
     q_max = 2 ** (n_bits - 1) - 1
     scales.clamp_(min=1e-5).div_(q_max)
     t.div_(scales).round_().mul_(scales)
@@ -46,6 +57,7 @@ def quantize_activation_per_tensor_absmax(t, n_bits=8):
 
 
 class W8A8Linear(nn.Module):
+    """把普通 nn.Linear替换未"8-bit权重 * 8-bit激活"的量化版"""
     def __init__(
         self,
         in_features,
@@ -104,7 +116,7 @@ class W8A8Linear(nn.Module):
     @torch.no_grad()
     def forward(self, x):
         q_x = self.act_quant(x)  # 量化输入激活值
-        y = torch.functional.F.linear(q_x, self.weight, self.bias)  # 线性计算
+        y = torch.functional.F.linear(q_x, self.weight, self.bias)  # 用浮点乘法"模拟"量化误差
         q_y = self.output_quant(y)  # 可选量化输出
         return q_y
 
@@ -143,6 +155,9 @@ class W8A8Linear(nn.Module):
 def quantize_opt(
     model, weight_quant="per_tensor", act_quant="per_tensor", quantize_bmm_input=True
 ):
+    """OPTAttention 的 forward 里,Q`Kᵀ/Softmax/Score`V 都在 Python 层逐行计算,
+    W8A8Linear 只能把 线性投影 换成量化版,BMM(批量矩阵乘法)和 Softmax 仍旧跑在 fp16.
+    如果需求是 "除了 Softmax 的输入以外全部 INT8",就必须侵入式改 forward,把 Q`Kᵀ/Score`V 这两步 BMM 也用 INT8 做,同时把 Softmax 的输入临时反量化回 fp16."""
     from transformers.models.opt.modeling_opt import (
         OPTAttention,
         OPTDecoderLayer,

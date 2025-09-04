@@ -11,15 +11,19 @@ from tqdm import tqdm
 
 
 def get_act_scales(model, tokenizer, dataset_path, num_samples=512, seq_len=512):
-    """计算模型的激活缩放因子"""
+    """离线收集激活最大值, 用来计算每层激活的 per-channel 最大绝对值,
+    为后面平滑系数s的求解提供数据"""
     model.eval()
     device = next(model.parameters()).device
     act_scales = {}
 
     def stat_tensor(name, tensor):
-        """统计张量的最大值"""
+        """统计张量的最大值, per-channel 校准"""
+        # tensor: [2, 512, 768]
         hidden_dim = tensor.shape[-1]  # 获取隐藏层维度
+        # [2, 512, 768] -> [2*512, 768] -> [2*512, 768]
         tensor = tensor.view(-1, hidden_dim).abs().detach()  # 展平张量, 取绝对值并分离计算图
+        # [2*512, 768] -> [768]
         comming_max = torch.max(tensor, dim=0)[0].float().cpu()  # 计算每列(沿隐藏维度)的最大值
         if name in act_scales:
             act_scales[name] = torch.max(act_scales[name], comming_max)  # 更新最大值
@@ -62,6 +66,9 @@ def get_static_decoder_layer_scales(
     num_samples=512,
     seq_len=512,
 ):
+    """统计整层所有 token 加在一起的最大绝对值,输出per-tensor标量scale(浮点数).
+    给平滑后的模型再跑一次校准,得到整层静态scale
+    """
     model.eval()
     device = next(model.parameters()).device
 
@@ -72,7 +79,7 @@ def get_static_decoder_layer_scales(
         if isinstance(x, tuple):
             x = x[0]
         if name not in act_dict or "input" not in act_dict[name]:
-            act_dict[name]["input"] = x.detach().abs().max().item()
+            act_dict[name]["input"] = x.detach().abs().max().item()  # 注意是全局最大值(逐层跨样本更新)
         else:
             act_dict[name]["input"] = max(
                 act_dict[name]["input"], x.detach().abs().max().item()

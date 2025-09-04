@@ -17,6 +17,15 @@ from transformers.models.falcon.modeling_falcon import FalconDecoderLayer
 
 @torch.no_grad()
 def smooth_ln_fcs(ln, fcs, act_scales, alpha=0.5):
+    """
+    args:
+        ln: LayerNorm 层
+        fcs: 线性层列表
+        act_scales: 该层输入的激活值的缩放因子
+        alpha: 平滑系数, 对应于论文中公式4的alpha参数
+    该函数实现了论文中的平滑量化(SmoothQuant)算法,对LayerNorm层和线性层的权重进行调整
+    以减小量化误差.
+    """
     if not isinstance(fcs, list):
         fcs = [fcs]
     assert isinstance(ln, nn.LayerNorm)
