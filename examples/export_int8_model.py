@@ -12,6 +12,12 @@ from smoothquant.smooth import smooth_lm
 
 from smoothquant.calibration import get_static_decoder_layer_scales
 
+def load_state_dict_compatible(model, state_dict):
+    model_keys = set(model.state_dict().keys())
+    for k, v in list(state_dict.items()):
+        if 'bias' in k and v.dim() == 2 and v.shape[0] == 1:
+            state_dict[k] = v.squeeze(0)   # (1, n) -> (n)
+    model.load_state_dict(state_dict, strict=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -56,7 +62,41 @@ if __name__ == '__main__':
         torch.save(raw_scales, output_path)
         print(f"Saved scaling factors at {output_path}")
     else:
-        # 已量化成 INT8 的权重
+        # 这里的输入model是经过平滑的 float16 模型, 还没有进行权重量化 + 激活量化
         int8_model = Int8OPTForCausalLM.from_float(model, decoder_layer_scales)
+        # 修改前检查
+        sd = int8_model.state_dict()
+        for k, v in sd.items():
+            if "bias" in k:
+                print(k, v.shape)          # 如果全是 [768] → 磁盘就是 1-D
+        # 修改bias维度
+        with torch.no_grad():
+            for name, m in int8_model.named_modules():
+                if hasattr(m, "bias") and m.bias is not None:
+                    # 1. 先转回浮点
+                    old_bias = m.bias.data.float()          # int8 -> fp16/fp32
+                    # 2. 新建 2-D Parameter
+                    m.bias = torch.nn.Parameter(old_bias.unsqueeze(0))   # [1, 768]
+                    # 3. 关闭梯度(可选,但 int8 权重本就不训练)
+                    m.bias.requires_grad = False
+        # 修改后检查
+        sd = int8_model.state_dict()
+        for k, v in sd.items():
+            if "bias" in k:
+                print(k, v.shape)          # 如果全是 [768] → 磁盘就是 1-D
+
         int8_model.save_pretrained(output_path)
         print(f"Saved int8 model at {output_path}")
+
+        #测试加载, 维度仍为一维
+        model_reload = Int8OPTForCausalLM.from_pretrained(
+            str(output_path),
+            local_files_only=True,
+            device_map="auto"
+        )
+        for name, p in model_reload.named_parameters():
+            if "bias" in name and p.shape == torch.Size([1, 3072]):
+                print(name, p.shape)      # 应全是 [1, 3072]
+                break
+            else:
+                print("bias 维度仍不对!")

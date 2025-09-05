@@ -66,6 +66,7 @@ def print_model_size(model):
     size_all_mb = (param_size + buffer_size) / 1024**2
     print('Model size: {:.3f}MB'.format(size_all_mb))
 
+
 if __name__ == '__main__':
     model_name = "facebook/opt-125m"
     load_int8_path = "int8_models/opt-125m-smoothquant"

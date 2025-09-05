@@ -41,13 +41,13 @@ class Int8OPTAttention(nn.Module):
 
         self.attention_weight_scale = 1.0
 
-        self.qk_bmm = BMM_S8T_S8N_F32T(1.0)
-        self.pv_bmm = BMM_S8T_S8N_S8T(1.0)
+        self.qk_bmm = BMM_S8T_S8N_F32T(1.0)  # 结果为 float32
+        self.pv_bmm = BMM_S8T_S8N_S8T(1.0)  # 结果为 int8
 
-        self.k_proj = W8A8B8O8Linear(embed_dim, embed_dim)
+        self.k_proj = W8A8B8O8Linear(embed_dim, embed_dim)  # 输入/权重/偏置/输出都是 INT8
         self.v_proj = W8A8B8O8Linear(embed_dim, embed_dim)
         self.q_proj = W8A8B8O8Linear(embed_dim, embed_dim)
-        self.out_proj = W8A8BFP32OFP32Linear(embed_dim, embed_dim)
+        self.out_proj = W8A8BFP32OFP32Linear(embed_dim, embed_dim) # 输入 INT8,输出 FP32(用于最终输出还原精度)
 
     @staticmethod
     @torch.no_grad()
@@ -61,9 +61,14 @@ class Int8OPTAttention(nn.Module):
     ):
         int8_module = Int8OPTAttention(module.embed_dim, module.num_heads)
         # Fuse the scaling into the q_proj output scale
+
+        # 提前做sqrt(d_k)缩放, 避免运行时再乘把 scaling 提前融合进 Q 投影层,
+        # 是为了在保持数学等价的前提下,
+        # 减少运行时浮点运算,利于量化部署.
         q_output_scale = q_output_scale * module.scaling
         module.q_proj.weight *= module.scaling
         module.q_proj.bias *= module.scaling
+
         int8_module.q_proj = W8A8B8O8Linear.from_float(
             module.q_proj, input_scale, q_output_scale
         )
@@ -210,6 +215,9 @@ class Int8OPTAttention(nn.Module):
 
 
 class Int8OPTDecoderLayer(nn.Module):
+    """在保持模型结构不变的前提下,
+    将整层计算(注意力 + FFN)全部转为 INT8 精度,
+    从而加速推理/降低显存占用."""
     def __init__(self, embed_dim, num_attention_heads, ffn_dim):
         super().__init__()
         self.embed_dim = embed_dim
@@ -377,6 +385,7 @@ class Int8OPTDecoder(OPTPreTrainedModel):
 
     @staticmethod
     def from_float(module, decoder_layer_scales):
+        # decoder_layer_scales 是 离线校准得到的每层量化参数列表(每层 7 个 scale)
         int8_module = Int8OPTDecoder(module.config)
         int8_module.embed_tokens = module.embed_tokens
         int8_module.embed_positions = module.embed_positions
@@ -404,6 +413,7 @@ class Int8OPTDecoder(OPTPreTrainedModel):
         input_len = input_ids.shape[1]
         from torch.nn.functional import pad
 
+        # decoder_layer_scales 是 离线校准得到的每层量化参数列表(每层 7 个 scale)
         if input_len % 16 != 0:
             # <pad> is 1
             padding_len = 16 - input_len % 16
